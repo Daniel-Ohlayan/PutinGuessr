@@ -111,7 +111,7 @@ body { overflow: hidden; }
 .city-empty { margin: 0; text-align: center; color: var(--muted); }
 
 /* ---------- Вкладки и режимы ---------- */
-.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; }
 .tab { border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 600; padding: 9px; border-radius: 9px; cursor: pointer; }
 .tab:hover { color: var(--text); }
 .tab.is-active { background: var(--card); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.04), 0 4px 12px rgba(0,0,0,.3); }
@@ -246,6 +246,55 @@ body { overflow: hidden; }
 .round-row-dist { color: var(--muted); text-align: right; }
 .round-row-score { text-align: right; font-weight: 700; }
 .final-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+
+/* ---------- Дуэль ---------- */
+.duel-divider {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+}
+.duel-divider::before, .duel-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.duel-link-row { display: flex; flex-direction: column; gap: 6px; }
+.duel-link-label { color: var(--muted); font-size: 12px; }
+.duel-link-input {
+  width: 100%; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg-2);
+  color: var(--text); font: inherit; font-size: 13px;
+  text-overflow: ellipsis; outline: none;
+}
+.duel-link-row .btn { align-self: flex-start; }
+.duel-share {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+}
+.duel-share-title { font-weight: 700; }
+.vs-banner { text-align: center; font-weight: 800; font-size: 18px; padding: 10px; border-radius: 10px; }
+.vs-win { background: rgba(255, 204, 0, .14); color: var(--accent); }
+.vs-lose { background: rgba(229, 57, 53, .14); color: var(--red); }
+.vs-draw { background: rgba(30, 136, 229, .14); color: var(--blue); }
+.vs-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vs-card {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+  display: flex; flex-direction: column; gap: 4px; text-align: center;
+}
+.vs-card-label { color: var(--muted); font-size: 12px; }
+.vs-card-score { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.vs-you { color: var(--accent); }
+.vs-opp { color: var(--blue); }
+.dot-you { background: var(--accent); }
+.dot-opp { background: var(--blue); }
+.vs-note { text-align: center; margin: 0; }
+.vs-rounds { display: flex; flex-direction: column; gap: 10px; }
+.vs-round { display: flex; flex-direction: column; gap: 5px; }
+.vs-round-head {
+  display: flex; justify-content: space-between;
+  font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.vs-round-scores { color: var(--text); font-weight: 600; }
+.vs-bars { display: flex; flex-direction: column; gap: 4px; }
+.vs-bar { height: 6px; border-radius: 99px; background: #2a313b; overflow: hidden; }
+.vs-bar > span { display: block; height: 100%; border-radius: inherit; }
+.vs-bar-you > span { background: var(--accent); }
+.vs-bar-opp > span { background: var(--blue); }
 
 /* ---------- Скрытие подсказок Яндекса ---------- */
 /* Название улицы/адрес панорамы и ссылки «Открыть в Яндекс.Картах» — страховка поверх опций API. */

@@ -71,6 +71,31 @@ export function randomPointInBBox(bbox: [number, number, number, number]): LatLn
   return [lat, lng];
 }
 
+/** Равномерная точка внутри bbox на заданном ГПСЧ (детерминированная). */
+export function randomPointInBBoxWithRng(
+  bbox: [number, number, number, number],
+  rng: () => number,
+): LatLng {
+  const [minLng, minLat, maxLng, maxLat] = bbox;
+  return [minLat + rng() * (maxLat - minLat), minLng + rng() * (maxLng - minLng)];
+}
+
+/**
+ * Случайная точка строго внутри полигона на заданном ГПСЧ:
+ * выборка с отклонением из bbox + отсев по booleanPointInPolygon.
+ */
+export function randomPointInGeometryWithRng(geometry: CityGeometry, rng: () => number): LatLng | null {
+  const [minX, minY, maxX, maxY] = getBBox(geometry);
+  for (let i = 0; i < INNER_SAMPLING_LIMIT; i++) {
+    const lng = minX + rng() * (maxX - minX);
+    const lat = minY + rng() * (maxY - minY);
+    if (turf.booleanPointInPolygon(turf.point([lng, lat]), geometry, { ignoreBoundary: true })) {
+      return [lat, lng];
+    }
+  }
+  return null;
+}
+
 export function boundsDiagonalMeters(bounds: number[][]): number {
   return distanceMeters([bounds[0][0], bounds[0][1]], [bounds[1][0], bounds[1][1]]);
 }

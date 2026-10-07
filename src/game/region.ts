@@ -1,5 +1,7 @@
 import { CITY_LIST, type City, type CityListItem } from '../data/cities';
 import {
+  CITY_SEARCH_RADIUS,
+  findPanoramaAtPosition,
   findRandomPanorama,
   getRandomPanoramaInCity,
   type FoundPanorama,
@@ -9,9 +11,11 @@ import {
   bboxDiagonalMeters,
   boundsDiagonalMeters,
   destination,
-  randomPointInBBox,
+  randomPointInBBoxWithRng,
+  randomPointInGeometryWithRng,
   toYmapsBounds,
   type CityGeometry,
+  type LatLng,
 } from '../utils/geo';
 
 export type RegionSelection = { kind: 'city'; cityId: string } | { kind: 'russia' };
@@ -29,6 +33,12 @@ export interface GameRegion {
   mapSize: number;
   /** Минимальное расстояние между панорамами разных раундов, м. */
   minSeparation: number;
+  /** Пул предзаготовленных точек панорам (null — только живой поиск). */
+  poolId: string | null;
+  /** Детерминированный генератор точек-кандидатов по заданному ГПСЧ (для сидированных игр). */
+  createSampler(rng: () => number): () => LatLng | null;
+  /** Панорама рядом с конкретной точкой: один вызов API; null — рядом нет. */
+  findPanoramaAt(point: LatLng): Promise<FoundPanorama | null>;
   findPanorama(options: RandomPanoramaOptions): Promise<FoundPanorama>;
 }
 
@@ -41,6 +51,9 @@ export function createCityRegion(city: City): GameRegion {
     minZoom: 8,
     mapSize: bboxDiagonalMeters(city.geometry),
     minSeparation: 700,
+    poolId: null,
+    createSampler: (rng) => () => randomPointInGeometryWithRng(city.geometry, rng),
+    findPanoramaAt: (point) => findPanoramaAtPosition(point, city.geometry, CITY_SEARCH_RADIUS),
     findPanorama: (options) => getRandomPanoramaInCity(city.geometry, options),
   };
 }
@@ -61,12 +74,13 @@ const RUSSIA_ATTEMPTS = 30;
  * Как в GeoGuessr, выбираем место «там, где есть съёмка»: город со взвешиванием
  * по населению (крупные чаще, но малые тоже встречаются), затем точка в городе
  * или на расстоянии 3–30 км от него — пригороды, сёла, трассы.
+ * ГПСЧ передаётся снаружи: Math.random для обычной игры, сидированный — для дуэли.
  */
-function createRussiaSampler(cities: CityListItem[]) {
+function createRussiaSampler(cities: CityListItem[], rng: () => number) {
   const weights = cities.map((c) => Math.pow(Math.max(c.population, 5000), 0.45));
   const total = weights.reduce((a, b) => a + b, 0);
   const pickCity = (): CityListItem => {
-    let r = Math.random() * total;
+    let r = rng() * total;
     for (let i = 0; i < cities.length; i++) {
       r -= weights[i];
       if (r <= 0) return cities[i];
@@ -75,14 +89,13 @@ function createRussiaSampler(cities: CityListItem[]) {
   };
   return () => {
     const city = pickCity();
-    if (Math.random() < 0.7) return randomPointInBBox(city.bbox);
-    const distance = 3000 + Math.random() * 27000;
-    return destination(city.center, distance, Math.random() * 360);
+    if (rng() < 0.7) return randomPointInBBoxWithRng(city.bbox, rng);
+    const distance = 3000 + rng() * 27000;
+    return destination(city.center, distance, rng() * 360);
   };
 }
 
 export function createRussiaRegion(russia: CityGeometry): GameRegion {
-  const sample = createRussiaSampler(CITY_LIST);
   return {
     selection: { kind: 'russia' },
     title: 'Вся Россия',
@@ -91,11 +104,14 @@ export function createRussiaRegion(russia: CityGeometry): GameRegion {
     minZoom: 2,
     mapSize: RUSSIA_MAP_SIZE,
     minSeparation: 50000,
+    poolId: 'russia',
+    createSampler: (rng) => createRussiaSampler(CITY_LIST, rng),
+    findPanoramaAt: (point) => findPanoramaAtPosition(point, russia, RUSSIA_SEARCH_RADIUS),
     findPanorama: (options) =>
       findRandomPanorama({
         ...options,
         boundary: russia,
-        samplePoint: sample,
+        samplePoint: createRussiaSampler(CITY_LIST, options.rng ?? Math.random),
         radius: RUSSIA_SEARCH_RADIUS,
         maxAttempts: RUSSIA_ATTEMPTS,
       }),

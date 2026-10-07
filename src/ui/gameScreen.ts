@@ -1,4 +1,4 @@
-import { GameSession, type RoundResult } from '../game/gameSession';
+import { GameSession, type DuelInfo, type RoundResult } from '../game/gameSession';
 import type { GameRegion } from '../game/region';
 import { MAX_ROUND_SCORE } from '../game/scoring';
 import { GuessMap } from '../map/guessMap';
@@ -9,15 +9,24 @@ import { GAME_TITLE } from '../config';
 import { getApiKey } from '../utils/apiKey';
 import { h, show } from '../utils/dom';
 import { formatDistance, formatScore, pluralizePoints } from '../utils/format';
+import type { LatLng } from '../utils/geo';
 
 export interface GameScreenOptions {
   onFinish: (session: GameSession) => void;
   onExit: () => void;
+  /** Дуэль: игра по сидированному плану раундов. */
+  duel?: DuelInfo | null;
+}
+
+export interface LoadedGame {
+  region: GameRegion;
+  /** Точки-кандидаты по сиду (дуэль); отсутствует в обычной игре. */
+  plan?: LatLng[] | null;
 }
 
 export function renderGameScreen(
   root: HTMLElement,
-  loadRegion: () => Promise<GameRegion>,
+  loadGame: () => Promise<LoadedGame>,
   options: GameScreenOptions,
 ): () => void {
   let session: GameSession | null = null;
@@ -27,6 +36,8 @@ export function renderGameScreen(
   let panoramaView: PanoramaView | null = null;
   let prefetched: Promise<FoundPanorama | null> | null = null;
   let roundReady = false;
+  /** Точка из плана, которую разрезолвываем в панораму в этом раунде. */
+  let currentCandidate: LatLng | null = null;
 
   // ---------- Разметка ----------
   const roundLabel = h('span', { class: 'hud-value' }, '–');
@@ -107,11 +118,25 @@ export function renderGameScreen(
     guessBtn.disabled = !(roundReady && guessMap?.getGuess());
   };
 
-  const findPanorama = (): Promise<FoundPanorama> => {
-    if (!session) return Promise.reject(new Error('Игра не инициализирована'));
+  /**
+   * Панорама текущего раунда. В сидированной игре (дуэли) — по точке из плана
+   * (один вызов API на точную позицию, та же панорама у обоих игроков);
+   * если план исчерпан — обычный живой случайный поиск.
+   */
+  const acquirePanorama = async (): Promise<FoundPanorama> => {
+    if (!session) throw new Error('Игра не инициализирована');
+    while (currentCandidate !== null || session.hasPlan) {
+      if (currentCandidate === null) currentCandidate = session.takePlanCandidate();
+      if (currentCandidate === null) break;
+      const found = await session.region.findPanoramaAt(currentCandidate);
+      if (found) return found;
+      currentCandidate = null; // рядом с этой точкой панорамы нет — берём следующую из плана
+    }
     return session.region.findPanorama({
       exclude: session.usedPositions,
       minSeparation: session.region.minSeparation,
+      // В дуэли запасной поиск тоже детерминирован — точки совпадут у обоих игроков.
+      rng: session.liveRng ?? undefined,
     });
   };
 
@@ -136,7 +161,7 @@ export function renderGameScreen(
         found = await prefetched;
         prefetched = null;
       }
-      if (!found) found = await findPanorama();
+      if (!found) found = await acquirePanorama();
       if (destroyed || token !== roundToken || !session) return;
 
       session.setPanoramaPosition(found.position);
@@ -152,6 +177,7 @@ export function renderGameScreen(
 
   const startRound = () => {
     if (!session) return;
+    currentCandidate = null;
     side.classList.remove('is-result');
     session.nextRound();
     updateHud();
@@ -182,8 +208,9 @@ export function renderGameScreen(
     showRoundResult(result);
 
     // Пока игрок смотрит результат — заранее ищем следующую панораму.
-    if (!session.isFinished) {
-      prefetched = findPanorama().catch(() => null);
+    // В сидированной игре с планом не нужно: там один быстрый запрос на точную позицию.
+    if (!session.isFinished && !session.hasPlan) {
+      prefetched = acquirePanorama().catch(() => null);
     }
   };
 
@@ -214,7 +241,6 @@ export function renderGameScreen(
 
   const init = async () => {
     setLoading('Загружаем карты…');
-    let region: GameRegion;
     try {
       await loadYmaps();
     } catch {
@@ -225,15 +251,18 @@ export function renderGameScreen(
       );
       return;
     }
+    let game: LoadedGame;
+    let region: GameRegion;
     try {
-      region = await loadRegion();
+      game = await loadGame();
+      region = game.region;
     } catch {
       if (destroyed) return;
       setError('Не удалось загрузить границы. Проверьте подключение и попробуйте снова.', () => void init());
       return;
     }
     if (destroyed) return;
-    session = new GameSession(region);
+    session = new GameSession(region, { plan: game.plan ?? null, duel: options.duel ?? null });
     panoramaView = new PanoramaView(panoEl);
     guessMap = new GuessMap(
       mapEl,

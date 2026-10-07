@@ -2,6 +2,7 @@ import {
   distanceMeters,
   isInsideGeometry,
   randomPointInGeometry,
+  randomPointInGeometryWithRng,
   type CityGeometry,
   type LatLng,
 } from '../utils/geo';
@@ -32,6 +33,8 @@ export interface RandomPanoramaOptions {
   exclude?: LatLng[];
   /** Минимальное расстояние до исключённых точек, м. */
   minSeparation?: number;
+  /** ГПСЧ для детерминированного поиска (сидированные игры); по умолчанию Math.random. */
+  rng?: () => number;
 }
 
 export interface PanoramaSearchParams extends RandomPanoramaOptions {
@@ -134,6 +137,7 @@ export async function findRandomPanorama(params: PanoramaSearchParams): Promise<
     exclude: [],
     minSeparation: 500,
     maxAttempts: MAX_ATTEMPTS,
+    rng: Math.random,
     ...params,
   };
   let done = 0;
@@ -175,6 +179,46 @@ export async function findRandomPanorama(params: PanoramaSearchParams): Promise<
 }
 
 /**
+ * Панорама рядом с конкретной точкой (для пула/сидированных игр):
+ * ровно один вызов locate, без перебора попыток. null — рядом нет панорамы.
+ * По точной позиции из пула locate возвращает ту же панораму, что и при сборе.
+ */
+export async function findPanoramaAtPosition(
+  point: LatLng,
+  boundary: CityGeometry,
+  radius: number,
+): Promise<FoundPanorama | null> {
+  if (!ymaps.panorama.isSupported()) {
+    throw new PanoramaSearchError(
+      'Ваш браузер не поддерживает Яндекс.Панорамы. Попробуйте другой браузер.',
+      'unsupported',
+    );
+  }
+  countPanoramaCall();
+  let panoramas: ymaps.panorama.IPanorama[];
+  try {
+    panoramas = await withTimeout(
+      Promise.resolve(ymaps.panorama.locate(point, { layer: 'yandex#panorama' })),
+      LOCATE_TIMEOUT_MS,
+    );
+  } catch (error) {
+    throw new PanoramaSearchError(
+      'Сервис Яндекс.Панорам не отвечает. Проверьте подключение к интернету и API-ключ.',
+      'api',
+      describeError(error),
+    );
+  }
+  for (const panorama of panoramas ?? []) {
+    const raw = panorama.getPosition();
+    const position: LatLng = [raw[0], raw[1]];
+    if (distanceMeters(point, position) > radius) continue;
+    if (!isInsideGeometry(position, boundary)) continue;
+    return { panorama, position };
+  }
+  return null;
+}
+
+/**
  * Случайная панорама строго внутри полигона города:
  * turf.randomPoint в bbox → booleanPointInPolygon → ymaps.panorama.locate, радиус 150 м.
  */
@@ -185,7 +229,10 @@ export function getRandomPanoramaInCity(
   return findRandomPanorama({
     ...options,
     boundary: polygon,
-    samplePoint: () => randomPointInGeometry(polygon),
+    samplePoint: () =>
+      options.rng
+        ? randomPointInGeometryWithRng(polygon, options.rng)
+        : randomPointInGeometry(polygon),
     radius: CITY_SEARCH_RADIUS,
   });
 }
