@@ -24,3 +24,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 export function show(el: HTMLElement, visible: boolean): void {
   el.hidden = !visible;
 }
+
+/** Копирует текст в буфер обмена. false — буфер недоступен (не https, запрет и т.п.). */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -1,4 +1,5 @@
 import { distanceMeters, type LatLng } from '../utils/geo';
+import { createRng } from '../utils/random';
 import type { GameRegion } from './region';
 import { calculateScore, MAX_ROUND_SCORE } from './scoring';
 
@@ -12,15 +13,49 @@ export interface RoundResult {
   score: number;
 }
 
+/** Дуэль: сид определяет одни и те же точки для обоих игроков. */
+export interface DuelInfo {
+  /** Ключ региона в ссылке на дуэль (например, «russia»). */
+  region: string;
+  seed: string;
+}
+
 /** Состояние одной игры (в памяти). */
 export class GameSession {
   readonly totalRounds = TOTAL_ROUNDS;
   readonly maxTotalScore = TOTAL_ROUNDS * MAX_ROUND_SCORE;
   readonly results: RoundResult[] = [];
+  readonly duel: DuelInfo | null;
+  /**
+   * ГПСЧ для запасного живого поиска в дуэли: если план точек исчерпан,
+   * поиск продолжается детерминированно — у обоих игроков точки совпадут.
+   */
+  readonly liveRng: (() => number) | null;
   private currentRound = 0;
   private currentReal: LatLng | null = null;
+  /** Точки-кандидаты сидированной игры (дуэли); null — обычная случайная игра. */
+  private plan: LatLng[] | null;
+  private planIndex = 0;
 
-  constructor(readonly region: GameRegion) {}
+  constructor(
+    readonly region: GameRegion,
+    options: { plan?: LatLng[] | null; duel?: DuelInfo | null } = {},
+  ) {
+    this.plan = options.plan ?? null;
+    this.duel = options.duel ?? null;
+    this.liveRng = options.duel ? createRng(`${options.duel.seed}:live`) : null;
+  }
+
+  /** Остались ли неразобранные точки в плане сидированной игры. */
+  get hasPlan(): boolean {
+    return this.plan !== null && this.planIndex < this.plan.length;
+  }
+
+  /** Следующая точка-кандидат из плана; null — план исчерпан. */
+  takePlanCandidate(): LatLng | null {
+    if (!this.plan) return null;
+    return this.plan[this.planIndex++] ?? null;
+  }
 
   get round(): number {
     return this.currentRound;
